@@ -153,3 +153,17 @@ def _json(obj: dict) -> str:
     import json
 
     return json.dumps(obj, ensure_ascii=False)
+
+# --- Health probes ---
+from fastapi.responses import JSONResponse
+from .db import ping
+
+@app.get("/livez")
+def liveness():
+    return {"status": "ok", "service": "bonos-service"}
+
+@app.get("/readyz")
+def readiness():
+    if ping():
+        return {"status": "ready", "db": "ok"}
+    return JSONResponse(status_code=503, content={"status": "not ready", "db": "down"})
