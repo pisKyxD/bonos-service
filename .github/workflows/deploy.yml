@@ -1,0 +1,47 @@
+name: CI/CD bonos-service
+
+on:
+  push:
+    branches: [deploy]
+  workflow_dispatch:
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Login a ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build tag y push
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          VERSION=$(cat VERSION 2>/dev/null || echo '1.0.0')
+          IMAGE=$REGISTRY/bonos-service
+          docker build -t $IMAGE:v$VERSION -t $IMAGE:latest -t $IMAGE:$TAG .
+          docker push $IMAGE:v$VERSION
+          docker push $IMAGE:latest
+          docker push $IMAGE:$TAG
+
+      - name: Deploy en EKS
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          aws eks update-kubeconfig --name vidal-casino --region us-east-1
+          kubectl apply -f k8s/
+          kubectl set image deployment/bonos-service bonos-service=$REGISTRY/bonos-service:$TAG
+          kubectl rollout status deployment/bonos-service
